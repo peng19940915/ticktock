@@ -20,8 +20,7 @@ import (
 	"errors"
 	"sync"
 	"time"
-
-	"github.com/rakyll/ticktock/t"
+	"github.com/peng19940915/ticktock/t"
 )
 
 var (
@@ -77,8 +76,10 @@ func (s *Scheduler) ScheduleWithOpts(name string, job Job, opts *t.Opts) (err er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.jobs[name]; ok {
-		return errors.New("a job already exists with the name provided")
+	if job_, ok := s.jobs[name]; ok {
+		job_.cancel()
+		delete(s.jobs, name)
+		//return errors.New("a job already exists with the name provided")
 	}
 	if opts.When == nil || opts.When.Duration(time.Now()) == 0 {
 		return errors.New("not a valid opts.When is provided")
@@ -135,7 +136,10 @@ type jobC struct {
 	timer      *time.Timer
 	cancelSig  chan bool
 }
-
+// Get schedule count
+func (s *Scheduler) Count() int{
+	return len(s.jobs)
+}
 func (j *jobC) schedule() {
 	select {
 	case <-j.cancelSig:
@@ -181,3 +185,4 @@ func (j *jobC) done() {
 	// handle this elsewhere
 	j.scheduler.wg.Done()
 }
+
