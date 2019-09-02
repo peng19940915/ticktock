@@ -65,8 +65,8 @@ func Cancel(name string) {
 func Start() {
 	defaultScheduler.Start()
 }
-func Count(){
-	defaultScheduler.Count()
+func Count()int{
+	return defaultScheduler.Count()
 }
 // Schedules a job on the scheduler. Name should be unique
 // among all registered jobs.
