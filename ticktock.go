@@ -75,14 +75,17 @@ func (s *Scheduler) Schedule(name string, job Job, when *t.When) error {
 }
 
 func (s *Scheduler) ScheduleWithOpts(name string, job Job, opts *t.Opts) (err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if job_, ok := s.jobs[name]; ok {
 		job_.cancel()
+		// 独立加锁，防止过长时间的等待
+		s.mu.Lock()
 		delete(s.jobs, name)
+		s.mu.Unlock()
 		//return errors.New("a job already exists with the name provided")
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if opts.When == nil || opts.When.Duration(time.Now()) == 0 {
 		return errors.New("not a valid opts.When is provided")
 	}
