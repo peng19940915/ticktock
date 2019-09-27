@@ -112,13 +112,14 @@ func (s *Scheduler) ScheduleWithOpts(name string, job Job, opts *t.Opts) (err er
 // for the job to complete and cancels the job.
 func (s *Scheduler) Cancel(name string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	job, ok := s.jobs[name]
+	s.mu.Unlock()
 	if !ok {
 		return
 	}
 	job.cancel()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.jobs, name)
 }
 
