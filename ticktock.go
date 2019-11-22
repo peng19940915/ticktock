@@ -17,9 +17,10 @@
 package ticktock
 
 import (
-	"errors"
+	`errors`
 	"sync"
 	"time"
+
 	"github.com/peng19940915/ticktock/t"
 )
 
@@ -75,23 +76,16 @@ func (s *Scheduler) Schedule(name string, job Job, when *t.When) error {
 }
 
 func (s *Scheduler) ScheduleWithOpts(name string, job Job, opts *t.Opts) (err error) {
-
-	if job_, ok := s.jobs[name]; ok {
-		job_.cancel()
-		// 独立加锁，防止过长时间的等待
-		s.mu.Lock()
-		delete(s.jobs, name)
-		s.mu.Unlock()
-		//return errors.New("a job already exists with the name provided")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if opts.When == nil || opts.When.Duration(time.Now()) == 0 {
-		return errors.New("not a valid opts.When is provided")
-	}
 	if s.jobs == nil {
 		s.jobs = make(map[string]*jobC)
 	}
+	if opts.When == nil || opts.When.Duration(time.Now()) == 0 {
+		return errors.New("not a valid opts.When is provided")
+	}
+
+	s.mu.Lock()
+
+	oldJob := s.jobs[name]
 	s.jobs[name] = &jobC{
 		scheduler:  s,
 		job:        job,
@@ -100,6 +94,21 @@ func (s *Scheduler) ScheduleWithOpts(name string, job Job, opts *t.Opts) (err er
 		forever:    opts.When.Every != nil,
 		cancelSig:  make(chan bool),
 	}
+
+	s.mu.Unlock()
+
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if oldJob != nil {
+		oldJob.cancel()
+	}
+
+	for oldJob != nil && oldJob.running {
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	if s.started {
 		s.wg.Add(1)
 		s.jobs[name].schedule()
@@ -141,6 +150,8 @@ type jobC struct {
 	forever    bool
 	timer      *time.Timer
 	cancelSig  chan bool
+	running    bool
+	mu         sync.RWMutex
 }
 // Get schedule count
 func (s *Scheduler) Count() int{
@@ -159,6 +170,15 @@ func (j *jobC) schedule() {
 		}
 		dur := j.when.Next(j.when.LastRun)
 		j.timer = time.AfterFunc(dur, func() {
+			// 如果cancelSig已经被关闭，说明不再执行
+			select {
+			case _, ok := <- j.cancelSig:
+				if !ok {
+					return
+				}
+			default:
+			}
+
 			j.run()
 			j.when.LastRun = time.Now()
 			if j.forever {
@@ -171,6 +191,11 @@ func (j *jobC) schedule() {
 }
 
 func (j *jobC) run() {
+	j.running = true
+	defer func() {
+		j.running = false
+	}()
+
 retryLoop:
 	for i := 0; i < j.retryCount+1; i++ {
 		if err := j.job.Run(); err == nil {
@@ -180,10 +205,7 @@ retryLoop:
 }
 
 func (j *jobC) cancel() {
-	j.cancelSig <- true
-	if j.timer != nil {
-		j.timer.Stop()
-	}
+	close(j.cancelSig)
 }
 
 func (j *jobC) done() {
